@@ -1,7 +1,7 @@
-import express from 'express';
+import express from 'express'
 import Collection from './../services/collections.service.js'
 import uploadFiles from './../middlewares/multer-upload-files.js'
-import Boom from '@hapi/boom';
+import Boom from '@hapi/boom'
 
 const router = express.Router();
 const collections = new Collection()

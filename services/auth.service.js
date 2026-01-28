@@ -8,7 +8,8 @@ import path from 'path'
 
 class Auth{
   constructor(){
-
+    this.jwtSecret = config.jwtSecret,
+    this.jwtExpiration='1h'
   }
 
   async create(data){
@@ -83,23 +84,23 @@ class Auth{
       if(!isPasswordValid){
         throw Boom.unauthorized('Email o passwor incorrectos')
       }
+      delete user.password
 
-      const payload = { userId:user._id, email:user.email, nombre:user.name}
+
+      const payload = user
       const token = jwt.sign(payload,this.jwtSecret,{ expiresIn:this.jwtExpiration})
-
-      return token
+      return { token,user }
 
     } catch (error) {
       if(Boom.isBoom(error)){
         throw error
       }
-      throw Boom.badImplementation('Error al registrar usuario',error)
+      throw Boom.badImplementation('Error al loguear usuario',error)
     }
   }
 
   async forgotPassword(data){
     try {
-      console.log(data)
       const { email } = data
       const user = await this.getUserByEmail(email)
 
