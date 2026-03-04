@@ -146,6 +146,24 @@ router.post('/:id/cutting',
   }
 );
 
+// POST /api/production/:id/cutting/return - Registrar entrega de corte
+router.post('/:id/cutting/return',
+  authenticate,
+  authorize('admin', 'supervisor', 'operator'),
+  async (req, res, next) => {
+    try {
+      const roll = await productionService.registerCuttingReturn(req.params.id, req.body);
+      res.status(200).json({
+        success: true,
+        message: 'Entrega de corte registrada exitosamente',
+        data: roll
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // ============================================
 // RUTAS DE PROCESOS - MAQUILA
 // ============================================
@@ -258,6 +276,28 @@ router.post('/:id/finishing/return',
       res.status(200).json({
         success: true,
         message: 'Entrega de terminado registrada exitosamente',
+        data: roll
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ============================================
+// CIERRE MANUAL DE ETAPAS
+// ============================================
+
+// POST /api/production/:id/:stage/close - Cerrar etapa manualmente
+router.post('/:id/:stage/close',
+  authenticate,
+  authorize('admin', 'supervisor'),
+  async (req, res, next) => {
+    try {
+      const roll = await productionService.closeStage(req.params.id, req.params.stage, req.body);
+      res.status(200).json({
+        success: true,
+        message: 'Etapa cerrada exitosamente',
         data: roll
       });
     } catch (error) {

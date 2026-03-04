@@ -67,7 +67,7 @@ class ProductionService {
 
       return rolls
     } catch (error) {
-      throw boom.internal('Error al obtener rollos: ' + error.message)
+      throw Boom.internal('Error al obtener rollos: ' + error.message)
     }
   }
 
@@ -75,20 +75,20 @@ class ProductionService {
   async findById(id) {
     try {
       if (!ObjectId.isValid(id)) {
-        throw boom.badRequest('ID de rollo inválido')
+        throw Boom.badRequest('ID de rollo inválido')
       }
 
       const collection = this.getCollection()
       const roll = await collection.findOne({ _id: new ObjectId(id) })
 
       if (!roll) {
-        throw boom.notFound('Rollo no encontrado')
+        throw Boom.notFound('Rollo no encontrado')
       }
 
       return roll
     } catch (error) {
-      if (error.isBoom) throw error
-      throw boom.internal('Error al obtener rollo: ' + error.message)
+      if (Boom.isBoom(error)) throw error
+      throw Boom.internal('Error al obtener rollo: ' + error.message)
     }
   }
 
@@ -137,10 +137,19 @@ class ProductionService {
         },
         cutting: {
           date: null,
+          cutterName: '',
+          cutterCost: 0,
+          piecesRequested: 0,
           pieces: 0,
+          productId: null,
+          productName: '',
           productType: '',
           size: '',
           notes: '',
+          piecesDelivered: 0,
+          piecesReturned: 0,
+          piecesPending: 0,
+          returns: [],
           completed: false
         },
         sewing: {
@@ -200,8 +209,8 @@ class ProductionService {
       const createdRoll = await this.findById(result.insertedId.toString())
       return createdRoll
     } catch (error) {
-      if (error.isBoom) throw error
-      throw boom.internal('Error al crear rollo: ' + error.message)
+      if (Boom.isBoom(error)) throw error
+      throw Boom.internal('Error al crear rollo: ' + error.message)
     }
   }
 
@@ -209,7 +218,7 @@ class ProductionService {
   async registerCutting(id, cuttingData) {
     try {
       if (!ObjectId.isValid(id)) {
-        throw boom.badRequest('ID de rollo inválido')
+        throw Boom.badRequest('ID de rollo inválido')
       }
 
       this.validateCuttingData(cuttingData)
@@ -218,7 +227,7 @@ class ProductionService {
 
       // Validar que no se haya registrado ya
       if (roll.cutting.completed) {
-        throw boom.badRequest('El corte ya ha sido registrado')
+        throw Boom.badRequest('El corte ya ha sido registrado')
       }
 
       const collection = this.getCollection()
@@ -228,12 +237,70 @@ class ProductionService {
           $set: {
             'cutting.date': new Date(cuttingData.date),
             'cutting.pieces': parseInt(cuttingData.pieces),
+            'cutting.piecesDelivered': parseInt(cuttingData.pieces),
             'cutting.productType': cuttingData.productType,
             'cutting.size': cuttingData.size,
             'cutting.notes': cuttingData.notes || '',
-            'cutting.completed': true,
+            'cutting.completed': false,
+            'cutting.piecesPending':parseInt(cuttingData.pieces),
             'summary.currentStatus': 'cutting',
             'summary.currentLocation': 'cutting',
+            updatedAt:cuttingData.updatedAt
+
+          }
+        },
+        { returnDocument: 'after' }
+      )
+
+      return result.value
+    } catch (error) {
+      if (Boom.isBoom(error)) throw error
+      throw Boom.internal('Error al registrar corte: ' + error.message)
+    }
+  }
+
+  // Registrar ENTREGA de corte (parcial o total)
+  async registerCuttingReturn(id, returnData) {
+    console.log(returnData)
+    try {
+      if (!ObjectId.isValid(id)) {
+        throw Boom.badRequest('ID de rollo invalido')
+      }
+
+      const roll = await this.findById(id)
+
+      if (roll.cutting.pieces === 0) {
+        throw Boom.badRequest('Debe registrar el corte primero')
+      }
+
+      const pieces = parseInt(returnData.pieces)
+      const newPiecesReturned = roll.cutting.piecesReturned + pieces
+      const newPiecesPending = roll.cutting.piecesDelivered - newPiecesReturned
+
+      if (newPiecesReturned > roll.cutting.piecesDelivered) {
+        throw Boom.badRequest('No puede recibir mas piezas de las solicitadas')
+      }
+
+      const newReturn = {
+        date: new Date(returnData.date),
+        pieces: pieces,
+        notes: returnData.notes || ''
+      }
+
+      const completed = newPiecesPending === 0
+
+      const collection = this.getCollection()
+      const result = await collection.findOneAndUpdate(
+        { _id: new ObjectId(id) },
+        {
+          $push: { 'cutting.returns': newReturn },
+          $set: {
+            'cutting.pieces': newPiecesReturned,
+            'cutting.piecesReturned': newPiecesReturned,
+            'cutting.piecesPending': newPiecesPending,
+            'cutting.completed': completed,
+            'summary.totalPieces': newPiecesReturned,
+            'summary.currentLocation': completed ? 'warehouse' : 'cutter',
             updatedAt: new Date()
           }
         },
@@ -242,16 +309,16 @@ class ProductionService {
 
       return result.value
     } catch (error) {
-      if (error.isBoom) throw error
-      throw boom.internal('Error al registrar corte: ' + error.message)
+      if (Boom.isBoom(error)) throw error
+      throw Boom.internal('Error al registrar entrega de corte: ' + error.message)
     }
   }
 
-  // Registrar proceso de MAQUILA (salida al maquilero)
+    // Registrar proceso de MAQUILA (salida al maquilero)
   async registerSewing(id, sewingData) {
     try {
       if (!ObjectId.isValid(id)) {
-        throw boom.badRequest('ID de rollo inválido')
+        throw Boom.badRequest('ID de rollo inválido')
       }
 
       this.validateSewingData(sewingData)
@@ -260,12 +327,12 @@ class ProductionService {
 
       // Validar que el corte esté completado
       if (!roll.cutting.completed) {
-        throw boom.badRequest('Debe registrar el corte antes de la maquila')
+        throw Boom.badRequest('Debe registrar el corte antes de la maquila')
       }
 
       // Validar que no se haya registrado ya
       if (roll.sewing.piecesDelivered > 0) {
-        throw boom.badRequest('La maquila ya ha sido registrada')
+        throw Boom.badRequest('La maquila ya ha sido registrada')
       }
 
       const piecesDelivered = parseInt(sewingData.piecesDelivered)
@@ -298,8 +365,8 @@ class ProductionService {
 
       return result.value
     } catch (error) {
-      if (error.isBoom) throw error
-      throw boom.internal('Error al registrar maquila: ' + error.message)
+      if (Boom.isBoom(error)) throw error
+      throw Boom.internal('Error al registrar maquila: ' + error.message)
     }
   }
 
@@ -307,14 +374,14 @@ class ProductionService {
   async registerSewingReturn(id, returnData) {
     try {
       if (!ObjectId.isValid(id)) {
-        throw boom.badRequest('ID de rollo inválido')
+        throw Boom.badRequest('ID de rollo inválido')
       }
 
       const roll = await this.findById(id)
 
       // Validar que la maquila esté registrada
       if (roll.sewing.piecesDelivered === 0) {
-        throw boom.badRequest('Debe registrar la salida a maquila primero')
+        throw Boom.badRequest('Debe registrar la salida a maquila primero')
       }
 
       const pieces = parseInt(returnData.pieces)
@@ -323,7 +390,7 @@ class ProductionService {
 
       // Validar que no exceda las piezas entregadas
       if (newPiecesReturned > roll.sewing.piecesDelivered) {
-        throw boom.badRequest('No puede recibir más piezas de las entregadas')
+        throw Boom.badRequest('No puede recibir más piezas de las entregadas')
       }
 
       const newReturn = {
@@ -353,8 +420,8 @@ class ProductionService {
 
       return result.value
     } catch (error) {
-      if (error.isBoom) throw error
-      throw boom.internal('Error al registrar entrega de maquila: ' + error.message)
+      if (Boom.isBoom(error)) throw error
+      throw Boom.internal('Error al registrar entrega de maquila: ' + error.message)
     }
   }
 
@@ -362,7 +429,7 @@ class ProductionService {
   async registerLaundry(id, laundryData) {
     try {
       if (!ObjectId.isValid(id)) {
-        throw boom.badRequest('ID de rollo inválido')
+        throw Boom.badRequest('ID de rollo inválido')
       }
 
       this.validateLaundryData(laundryData)
@@ -371,12 +438,12 @@ class ProductionService {
 
       // Validar que la maquila esté completada
       if (!roll.sewing.completed) {
-        throw boom.badRequest('Debe completar la maquila antes de la lavandería')
+        throw Boom.badRequest('Debe completar la maquila antes de la lavandería')
       }
 
       // Validar que no se haya registrado ya
       if (roll.laundry.piecesDelivered > 0) {
-        throw boom.badRequest('La lavandería ya ha sido registrada')
+        throw Boom.badRequest('La lavandería ya ha sido registrada')
       }
 
       const piecesDelivered = parseInt(laundryData.piecesDelivered)
@@ -408,8 +475,8 @@ class ProductionService {
 
       return result.value
     } catch (error) {
-      if (error.isBoom) throw error
-      throw boom.internal('Error al registrar lavandería: ' + error.message)
+      if (Boom.isBoom(error)) throw error
+      throw Boom.internal('Error al registrar lavandería: ' + error.message)
     }
   }
 
@@ -417,13 +484,13 @@ class ProductionService {
   async registerLaundryReturn(id, returnData) {
     try {
       if (!ObjectId.isValid(id)) {
-        throw boom.badRequest('ID de rollo inválido')
+        throw Boom.badRequest('ID de rollo inválido')
       }
 
       const roll = await this.findById(id)
 
       if (roll.laundry.piecesDelivered === 0) {
-        throw boom.badRequest('Debe registrar la salida a lavandería primero')
+        throw Boom.badRequest('Debe registrar la salida a lavandería primero')
       }
 
       const pieces = parseInt(returnData.pieces)
@@ -431,7 +498,7 @@ class ProductionService {
       const newPiecesPending = roll.laundry.piecesDelivered - newPiecesReturned
 
       if (newPiecesReturned > roll.laundry.piecesDelivered) {
-        throw boom.badRequest('No puede recibir más piezas de las entregadas')
+        throw Boom.badRequest('No puede recibir más piezas de las entregadas')
       }
 
       const newReturn = {
@@ -461,8 +528,8 @@ class ProductionService {
 
       return result.value
     } catch (error) {
-      if (error.isBoom) throw error
-      throw boom.internal('Error al registrar entrega de lavandería: ' + error.message)
+      if (Boom.isBoom(error)) throw error
+      throw Boom.internal('Error al registrar entrega de lavandería: ' + error.message)
     }
   }
 
@@ -470,7 +537,7 @@ class ProductionService {
   async registerFinishing(id, finishingData) {
     try {
       if (!ObjectId.isValid(id)) {
-        throw boom.badRequest('ID de rollo inválido')
+        throw Boom.badRequest('ID de rollo inválido')
       }
 
       this.validateFinishingData(finishingData)
@@ -478,11 +545,11 @@ class ProductionService {
       const roll = await this.findById(id)
 
       if (!roll.laundry.completed) {
-        throw boom.badRequest('Debe completar la lavandería antes del terminado')
+        throw Boom.badRequest('Debe completar la lavandería antes del terminado')
       }
 
       if (roll.finishing.piecesDelivered > 0) {
-        throw boom.badRequest('El terminado ya ha sido registrado')
+        throw Boom.badRequest('El terminado ya ha sido registrado')
       }
 
       const piecesDelivered = parseInt(finishingData.piecesDelivered)
@@ -514,8 +581,8 @@ class ProductionService {
 
       return result.value
     } catch (error) {
-      if (error.isBoom) throw error
-      throw boom.internal('Error al registrar terminado: ' + error.message)
+      if (Boom.isBoom(error)) throw error
+      throw Boom.internal('Error al registrar terminado: ' + error.message)
     }
   }
 
@@ -523,13 +590,13 @@ class ProductionService {
   async registerFinishingReturn(id, returnData) {
     try {
       if (!ObjectId.isValid(id)) {
-        throw boom.badRequest('ID de rollo inválido')
+        throw Boom.badRequest('ID de rollo inválido')
       }
 
       const roll = await this.findById(id)
 
       if (roll.finishing.piecesDelivered === 0) {
-        throw boom.badRequest('Debe registrar la salida a terminado primero')
+        throw Boom.badRequest('Debe registrar la salida a terminado primero')
       }
 
       const pieces = parseInt(returnData.pieces)
@@ -537,7 +604,7 @@ class ProductionService {
       const newPiecesPending = roll.finishing.piecesDelivered - newPiecesReturned
 
       if (newPiecesReturned > roll.finishing.piecesDelivered) {
-        throw boom.badRequest('No puede recibir más piezas de las entregadas')
+        throw Boom.badRequest('No puede recibir más piezas de las entregadas')
       }
 
       const newReturn = {
@@ -575,8 +642,102 @@ class ProductionService {
 
       return result.value
     } catch (error) {
-      if (error.isBoom) throw error
-      throw boom.internal('Error al registrar entrega de terminado: ' + error.message)
+      if (Boom.isBoom(error)) throw error
+      throw Boom.internal('Error al registrar entrega de terminado: ' + error.message)
+    }
+  }
+
+  // Cerrar etapa manualmente (con piezas pendientes)
+  async closeStage(id, stage, closeData) {
+    try {
+      if (!ObjectId.isValid(id)) {
+        throw Boom.badRequest('ID de rollo invalido')
+      }
+
+      const validStages = ['cutting', 'sewing', 'laundry', 'finishing']
+      if (!validStages.includes(stage)) {
+        throw Boom.badRequest('Etapa invalida: ' + stage)
+      }
+
+      if (!closeData.reason || !closeData.reason.trim()) {
+        throw Boom.badRequest('El motivo de cierre es obligatorio')
+      }
+
+      const roll = await this.findById(id)
+      const process = roll[stage]
+
+      // Validar que la etapa este en progreso
+      if (stage === 'cutting') {
+        if (process.piecesRequested === 0 && process.piecesDelivered === 0) {
+          throw Boom.badRequest('La etapa no ha sido iniciada')
+        }
+      } else {
+        if (process.piecesDelivered === 0) {
+          throw Boom.badRequest('La etapa no ha sido iniciada')
+        }
+      }
+
+      if (process.completed) {
+        throw Boom.badRequest('La etapa ya esta cerrada')
+      }
+
+      // Debe tener al menos una entrega parcial
+      if (process.piecesReturned === 0) {
+        throw Boom.badRequest('Debe tener al menos una entrega antes de cerrar')
+      }
+
+      const piecesLost = parseInt(closeData.piecesLost || 0)
+      const delivered = stage === 'cutting' ? (process.piecesRequested || process.piecesDelivered) : process.piecesDelivered
+      const totalAccountedFor = process.piecesReturned + piecesLost
+
+      if (totalAccountedFor > delivered) {
+        throw Boom.badRequest('Piezas perdidas + recibidas no pueden superar las entregadas')
+      }
+
+      const collection = this.getCollection()
+      const updateFields = {}
+
+      // Campos comunes de cierre
+      updateFields[stage + '.completed'] = true
+      updateFields[stage + '.piecesPending'] = 0
+      updateFields[stage + '.closedManually'] = true
+      updateFields[stage + '.closeReason'] = closeData.reason.trim()
+      updateFields[stage + '.piecesLost'] = piecesLost
+      updateFields[stage + '.closedAt'] = new Date()
+      updateFields['updatedAt'] = new Date()
+
+      // Actualizar ubicacion
+      updateFields['summary.currentLocation'] = 'warehouse'
+
+      // Las piezas que pasan a la siguiente etapa son las recibidas
+      if (stage === 'cutting') {
+        updateFields['cutting.pieces'] = process.piecesReturned
+        updateFields['summary.totalPieces'] = process.piecesReturned
+      }
+
+      // Acumular piezas perdidas en el summary
+      const totalLost = (roll.summary.piecesLost || 0) + piecesLost
+      updateFields['summary.piecesLost'] = totalLost
+
+      // Si es finishing, calcular costo por pieza final
+      if (stage === 'finishing') {
+        const totalPieces = process.piecesReturned
+        const costPerPiece = totalPieces > 0 ? roll.summary.totalInvested / totalPieces : 0
+        updateFields['summary.totalPieces'] = totalPieces
+        updateFields['summary.costPerPiece'] = costPerPiece
+        updateFields['summary.currentStatus'] = 'completed'
+      }
+
+      const result = await collection.findOneAndUpdate(
+        { _id: new ObjectId(id) },
+        { $set: updateFields },
+        { returnDocument: 'after' }
+      )
+
+      return result.value
+    } catch (error) {
+      if (Boom.isBoom(error)) throw error
+      throw Boom.internal('Error al cerrar etapa: ' + error.message)
     }
   }
 
@@ -584,7 +745,7 @@ class ProductionService {
   async update(id, rollData) {
     try {
       if (!ObjectId.isValid(id)) {
-        throw boom.badRequest('ID de rollo inválido')
+        throw Boom.badRequest('ID de rollo inválido')
       }
 
       const collection = this.getCollection()
@@ -605,13 +766,13 @@ class ProductionService {
       )
 
       if (!result.value) {
-        throw boom.notFound('Rollo no encontrado')
+        throw Boom.notFound('Rollo no encontrado')
       }
 
       return result.value
     } catch (error) {
-      if (error.isBoom) throw error
-      throw boom.internal('Error al actualizar rollo: ' + error.message)
+      if (Boom.isBoom(error)) throw error
+      throw Boom.internal('Error al actualizar rollo: ' + error.message)
     }
   }
 
@@ -619,20 +780,20 @@ class ProductionService {
   async delete(id) {
     try {
       if (!ObjectId.isValid(id)) {
-        throw boom.badRequest('ID de rollo inválido')
+        throw Boom.badRequest('ID de rollo inválido')
       }
 
       const collection = this.getCollection()
       const result = await collection.deleteOne({ _id: new ObjectId(id) })
 
       if (result.deletedCount === 0) {
-        throw boom.notFound('Rollo no encontrado')
+        throw Boom.notFound('Rollo no encontrado')
       }
 
       return { message: 'Rollo eliminado correctamente' }
     } catch (error) {
-      if (error.isBoom) throw error
-      throw boom.internal('Error al eliminar rollo: ' + error.message)
+      if (Boom.isBoom(error)) throw error
+      throw Boom.internal('Error al eliminar rollo: ' + error.message)
     }
   }
 
@@ -695,7 +856,7 @@ class ProductionService {
         avgCostPerPiece: result.avgCostPerPiece[0]?.avg || 0
       }
     } catch (error) {
-      throw boom.internal('Error al obtener estadísticas: ' + error.message)
+      throw Boom.internal('Error al obtener estadísticas: ' + error.message)
     }
   }
 
@@ -705,91 +866,91 @@ class ProductionService {
 
   validateRollData(data) {
     if (!data.fabricType || !data.fabricType.trim()) {
-      throw boom.badRequest('El tipo de tela es requerido')
+      throw Boom.badRequest('El tipo de tela es requerido')
     }
 
     if (!data.meters || parseFloat(data.meters) <= 0) {
-      throw boom.badRequest('Los metros deben ser mayores a 0')
+      throw Boom.badRequest('Los metros deben ser mayores a 0')
     }
 
     if (!data.purchaseDate) {
-      throw boom.badRequest('La fecha de compra es requerida')
+      throw Boom.badRequest('La fecha de compra es requerida')
     }
 
     if (!data.cost || parseFloat(data.cost) <= 0) {
-      throw boom.badRequest('El costo debe ser mayor a 0')
+      throw Boom.badRequest('El costo debe ser mayor a 0')
     }
   }
 
   validateCuttingData(data) {
     if (!data.date) {
-      throw boom.badRequest('La fecha de corte es requerida')
+      throw Boom.badRequest('La fecha de corte es requerida')
     }
 
     if (!data.pieces || parseInt(data.pieces) <= 0) {
-      throw boom.badRequest('El número de piezas debe ser mayor a 0')
+      throw Boom.badRequest('El número de piezas debe ser mayor a 0')
     }
 
     if (!data.productType || !data.productType.trim()) {
-      throw boom.badRequest('El tipo de producto es requerido')
+      throw Boom.badRequest('El tipo de producto es requerido')
     }
 
     if (!data.size || !data.size.trim()) {
-      throw boom.badRequest('La talla es requerida')
+      throw Boom.badRequest('La talla es requerida')
     }
   }
 
   validateSewingData(data) {
     if (!data.seamstress || !data.seamstress.trim()) {
-      throw boom.badRequest('El nombre del maquilero es requerido')
+      throw Boom.badRequest('El nombre del maquilero es requerido')
     }
 
     if (!data.piecesDelivered || parseInt(data.piecesDelivered) <= 0) {
-      throw boom.badRequest('Las piezas entregadas deben ser mayores a 0')
+      throw Boom.badRequest('Las piezas entregadas deben ser mayores a 0')
     }
 
     if (!data.pricePerPiece || parseFloat(data.pricePerPiece) <= 0) {
-      throw boom.badRequest('El precio por pieza debe ser mayor a 0')
+      throw Boom.badRequest('El precio por pieza debe ser mayor a 0')
     }
 
     if (!data.deliveryDate) {
-      throw boom.badRequest('La fecha de entrega es requerida')
+      throw Boom.badRequest('La fecha de entrega es requerida')
     }
   }
 
   validateLaundryData(data) {
     if (!data.laundryName || !data.laundryName.trim()) {
-      throw boom.badRequest('El nombre de la lavandería es requerido')
+      throw Boom.badRequest('El nombre de la lavandería es requerido')
     }
 
     if (!data.piecesDelivered || parseInt(data.piecesDelivered) <= 0) {
-      throw boom.badRequest('Las piezas entregadas deben ser mayores a 0')
+      throw Boom.badRequest('Las piezas entregadas deben ser mayores a 0')
     }
 
     if (!data.pricePerPiece || parseFloat(data.pricePerPiece) <= 0) {
-      throw boom.badRequest('El precio por pieza debe ser mayor a 0')
+      throw Boom.badRequest('El precio por pieza debe ser mayor a 0')
     }
 
     if (!data.deliveryDate) {
-      throw boom.badRequest('La fecha de entrega es requerida')
+      throw Boom.badRequest('La fecha de entrega es requerida')
     }
   }
 
   validateFinishingData(data) {
     if (!data.finisherName || !data.finisherName.trim()) {
-      throw boom.badRequest('El nombre del terminador es requerido')
+      throw Boom.badRequest('El nombre del terminador es requerido')
     }
 
     if (!data.piecesDelivered || parseInt(data.piecesDelivered) <= 0) {
-      throw boom.badRequest('Las piezas entregadas deben ser mayores a 0')
+      throw Boom.badRequest('Las piezas entregadas deben ser mayores a 0')
     }
 
     if (!data.pricePerPiece || parseFloat(data.pricePerPiece) <= 0) {
-      throw boom.badRequest('El precio por pieza debe ser mayor a 0')
+      throw Boom.badRequest('El precio por pieza debe ser mayor a 0')
     }
 
     if (!data.deliveryDate) {
-      throw boom.badRequest('La fecha de entrega es requerida')
+      throw Boom.badRequest('La fecha de entrega es requerida')
     }
   }
 }

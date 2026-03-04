@@ -6,6 +6,8 @@ import customersRouter from './customers.router.js'
 import paymentsRouter from './payments.router.js'
 import salesRouter from './sales.router.js'
 import productionRouter from './production.router.js'
+import sizesRouter from "./sizes.router.js"
+import productsRouter from "./products.router.js"
 
 const router = express.Router()
 
@@ -19,6 +21,8 @@ const AppRouter = (app,io) => {
   router.use('/payments',paymentsRouter)
   router.use('/sales',salesRouter)
   router.use('/production',productionRouter)
+   router.use("/sizes", sizesRouter)
+  router.use("/products", productsRouter)
 
   //Agregar las rutas necesarias
 
