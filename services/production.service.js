@@ -99,7 +99,7 @@ class ProductionService {
       const year = new Date().getFullYear()
 
       const lastRoll = await collection
-        .find({ folio: { $regex: `^ROLLO-${year}-` } })
+        .find({ folio: { $regex: `CORTE-${year}-` } })
         .sort({ folio: -1 })
         .limit(1)
         .toArray()
@@ -112,7 +112,7 @@ class ProductionService {
         nextNumber = lastNumber + 1
       }
 
-      return `ROLLO-${year}-${String(nextNumber).padStart(4, '0')}`
+      return `CORTE-${year}-${String(nextNumber).padStart(4, '0')}`
     } catch (error) {
       throw new Error('Error al generar folio: ' + error.message)
     }
@@ -236,9 +236,13 @@ class ProductionService {
         {
           $set: {
             'cutting.date': new Date(cuttingData.date),
+            'cutting.cutterCost': parseFloat(cuttingData.cutterCost),
+            'cutting.cutterName': cuttingData.cutterName,
             'cutting.pieces': parseInt(cuttingData.pieces),
             'cutting.piecesDelivered': parseInt(cuttingData.pieces),
             'cutting.productType': cuttingData.productType,
+            'cutting.productName': cuttingData.productName,
+            'cutting.productId': new ObjectId(cuttingData.productId),
             'cutting.size': cuttingData.size,
             'cutting.notes': cuttingData.notes || '',
             'cutting.completed': false,
@@ -897,6 +901,10 @@ class ProductionService {
 
     if (!data.size || !data.size.trim()) {
       throw Boom.badRequest('La talla es requerida')
+    }
+
+    if (!data.cutterCost || !data.cutterCost.trim()) {
+      throw Boom.badRequest('Se debe indicar el costo del recorte')
     }
   }
 
