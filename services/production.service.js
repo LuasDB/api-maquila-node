@@ -216,6 +216,7 @@ class ProductionService {
 
   // Registrar proceso de CORTE
   async registerCutting(id, cuttingData) {
+    console.log('[CUTTING DATA1]',cuttingData)
     try {
       if (!ObjectId.isValid(id)) {
         throw Boom.badRequest('ID de rollo inválido')
@@ -249,6 +250,7 @@ class ProductionService {
             'cutting.piecesPending':parseInt(cuttingData.pieces),
             'summary.currentStatus': 'cutting',
             'summary.currentLocation': 'cutting',
+            'summary.totalInvested': parseFloat(cuttingData.cutterCost) + parseFloat(roll.summary.totalInvested),
             updatedAt:cuttingData.updatedAt
 
           }
@@ -265,7 +267,6 @@ class ProductionService {
 
   // Registrar ENTREGA de corte (parcial o total)
   async registerCuttingReturn(id, returnData) {
-    console.log(returnData)
     try {
       if (!ObjectId.isValid(id)) {
         throw Boom.badRequest('ID de rollo invalido')
@@ -621,7 +622,7 @@ class ProductionService {
 
       // Calcular totales finales
       const totalPieces = newPiecesReturned
-      const piecesLost = roll.cutting.pieces - totalPieces
+      const piecesLost = roll.cutting.piecesDelivered - totalPieces
       const costPerPiece = totalPieces > 0 ? roll.summary.totalInvested / totalPieces : 0
 
       const collection = this.getCollection()
@@ -635,7 +636,7 @@ class ProductionService {
             'finishing.completed': completed,
             'summary.totalPieces': totalPieces,
             'summary.costPerPiece': costPerPiece,
-            'summary.piecesLost': piecesLost,
+            // 'summary.piecesLost': piecesLost,
             'summary.currentStatus': completed ? 'completed' : 'finishing',
             'summary.currentLocation': completed ? 'warehouse' : 'finisher',
             updatedAt: new Date()
@@ -654,6 +655,7 @@ class ProductionService {
   // Cerrar etapa manualmente (con piezas pendientes)
   async closeStage(id, stage, closeData) {
     try {
+      console.log(stage, closeData.piecesLost)
       if (!ObjectId.isValid(id)) {
         throw Boom.badRequest('ID de rollo invalido')
       }
@@ -691,6 +693,7 @@ class ProductionService {
       }
 
       const piecesLost = parseInt(closeData.piecesLost || 0)
+      console.log('[PIECES LOST]:',piecesLost)
       const delivered = stage === 'cutting' ? (process.piecesRequested || process.piecesDelivered) : process.piecesDelivered
       const totalAccountedFor = process.piecesReturned + piecesLost
 
@@ -721,6 +724,9 @@ class ProductionService {
 
       // Acumular piezas perdidas en el summary
       const totalLost = (roll.summary.piecesLost || 0) + piecesLost
+      console.log('[Rollo perdidas anterior]:',roll.summary.piecesLost )
+      console.log('[Perdidas actuales]:',piecesLost)
+      console.log('Total:',totalLost)
       updateFields['summary.piecesLost'] = totalLost
 
       // Si es finishing, calcular costo por pieza final
