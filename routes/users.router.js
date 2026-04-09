@@ -45,6 +45,7 @@ const usersRouter = (io)=>{
     try {
       const { body } = req
       const { id } = req.params
+      console.log('[PARAMS]',req.params)
       const result = await user.updateOneById(id,body)
       res.status(200).json({
         success:true,

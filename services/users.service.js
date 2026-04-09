@@ -1,6 +1,9 @@
 import { ObjectId } from 'mongodb'
 import { db } from './../db/mongoClient.js'
 import  Boom  from "@hapi/boom"
+import bcrypt from 'bcrypt'
+ 
+
 
 class Users{
   constructor(){}
@@ -54,29 +57,38 @@ class Users{
       throw Boom.badImplementation('No se pudo traer a todos los usuarios',error)}
     }
   }
-  async updateOneById(id, newData){
 
+  async updateOneById(id, newData) {
     try {
-      if(!ObjectId.isValid(id)){
+      if (!ObjectId.isValid(id)) {
         throw Boom.badImplementation(`El ID ${id} no es un ID valido`)
       }
 
-      const { _id,...dataToUpdate } = newData
+      const { _id, password, ...dataToUpdate } = newData
+
+      // 🔐 Si viene password → encriptar
+      if (password) {
+        const hashedPassword = await bcrypt.hash(password, 10)
+        dataToUpdate.password = hashedPassword
+      }
 
       const updateOne = await db.collection('users').updateOne(
-        {_id: new ObjectId(id)},
-        {$set:dataToUpdate}
+        { _id: new ObjectId(id) },
+        { $set: dataToUpdate }
       )
 
       if (updateOne.matchedCount === 0) {
-        throw Boom.notFound(`No se encontró un documento con ID ${id} en la colección ${collection}`);
+        throw Boom.notFound(`No se encontró un documento con ID ${id}`)
       }
+
       return updateOne
+
     } catch (error) {
-      if(Boom.isBoom(error)){
+      if (Boom.isBoom(error)) {
         throw error
-      }else{
-      throw Boom.badImplementation('No se pudo editar el usuario',error)}
+      } else {
+        throw Boom.badImplementation('No se pudo editar el usuario', error)
+      }
     }
   }
   async deleteOneById(id){
